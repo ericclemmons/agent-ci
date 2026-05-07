@@ -467,6 +467,10 @@ async function run() {
 // cache. The per-job calls in local-job.ts remain as a safety net and take
 // the inspect() fast path since images are already warm.
 async function prefetchRunnerImages(workflowPaths: string[]): Promise<void> {
+  if (process.env.AGENT_CI_EXECUTOR === "host") {
+    return;
+  }
+
   const docker = getDocker();
 
   // The upstream runner image is always needed: default mode uses it
