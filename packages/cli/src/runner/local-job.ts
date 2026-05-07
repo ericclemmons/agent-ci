@@ -396,7 +396,6 @@ export async function executeLocalJob(
 
       const writeOutput = (chunk: Buffer) => {
         debugStream.write(chunk);
-        process.stdout.write(chunk);
       };
       child.stdout.on("data", writeOutput);
       child.stderr.on("data", writeOutput);
