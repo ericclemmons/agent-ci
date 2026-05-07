@@ -2,7 +2,7 @@ import Docker from "dockerode";
 import path from "path";
 import fs from "fs";
 import fsp from "fs/promises";
-import { exec, execSync } from "child_process";
+import { exec, execSync, spawn } from "child_process";
 import { promisify } from "util";
 import { createInterface } from "readline";
 import { config } from "../config.js";
@@ -137,25 +137,28 @@ export async function executeLocalJob(
   options?: { pauseOnFailure?: boolean; store?: RunStateStore },
 ): Promise<JobResult> {
   const pauseOnFailure = options?.pauseOnFailure ?? false;
+  const hostExecutor = process.env.AGENT_CI_EXECUTOR === "host";
   const startTime = Date.now();
   const store = options?.store;
 
   // ── Pre-flight: verify Docker is reachable ────────────────────────────────
-  try {
-    await getDocker().ping();
-  } catch (err: any) {
-    const isSocket = err?.code === "ECONNREFUSED" || err?.code === "ENOENT";
-    const hint = isSocket
-      ? "Docker does not appear to be running."
-      : `Docker is not reachable: ${err?.message || err}`;
-    throw new Error(
-      `${hint}\n` +
-        "\n" +
-        "  To fix this:\n" +
-        "    1. Start your Docker runtime (OrbStack, Docker Desktop, etc.)\n" +
-        "    2. Wait for the engine to be ready\n" +
-        "    3. Re-run the workflow\n",
-    );
+  if (!hostExecutor) {
+    try {
+      await getDocker().ping();
+    } catch (err: any) {
+      const isSocket = err?.code === "ECONNREFUSED" || err?.code === "ENOENT";
+      const hint = isSocket
+        ? "Docker does not appear to be running."
+        : `Docker is not reachable: ${err?.message || err}`;
+      throw new Error(
+        `${hint}\n` +
+          "\n" +
+          "  To fix this:\n" +
+          "    1. Start your Docker runtime (OrbStack, Docker Desktop, etc.)\n" +
+          "    2. Wait for the engine to be ready\n" +
+          "    3. Re-run the workflow\n",
+      );
+    }
   }
 
   // ── Prepare directories ───────────────────────────────────────────────────
@@ -260,7 +263,9 @@ export async function executeLocalJob(
   // Hoisted for cleanup in `finally` — assigned inside the try block.
   let container: Docker.Container | null = null;
   let serviceCtx: ServiceContext | undefined;
-  const hostRunnerDir = path.resolve(runDir, "runner");
+  const hostRunnerDir = hostExecutor
+    ? path.resolve(process.env.AGENT_CI_HOST_RUNNER_DIR || "/workspace/runner")
+    : path.resolve(runDir, "runner");
 
   // Signal handler: ensure cleanup runs even when killed.
   // Do NOT call process.exit() here — multiple jobs register handlers concurrently,
@@ -353,6 +358,74 @@ export async function executeLocalJob(
       }
       bt("workspace-prep", workspacePrepStart);
     })();
+
+    if (hostExecutor) {
+      if (job.container || (job.services && job.services.length > 0)) {
+        throw new Error(
+          "Agent CI host executor does not support job containers or service containers yet. Use the Docker executor for this workflow.",
+        );
+      }
+
+      await workspacePrepPromise;
+      fs.mkdirSync(hostRunnerDir, { recursive: true });
+      for (const staleFile of [".runner", ".credentials", ".credentials_rsaparams"]) {
+        try {
+          fs.rmSync(path.join(hostRunnerDir, staleFile));
+        } catch {
+          /* not present */
+        }
+      }
+
+      const dtuHost = "127.0.0.1";
+      const dockerApiUrl = resolveDockerApiUrl(dtuUrl, dtuHost);
+      const githubRepo = job.githubRepo!;
+      writeRunnerCredentials(hostRunnerDir, containerName, `${dockerApiUrl}/${githubRepo}`);
+
+      const timelinePath = path.join(logDir, "timeline.json");
+      const child = spawn("./run.sh", ["--once"], {
+        cwd: hostRunnerDir,
+        env: {
+          ...process.env,
+          RUNNER_ALLOW_RUNASROOT: "1",
+          DOTNET_SYSTEM_GLOBALIZATION_INVARIANT:
+            process.env.DOTNET_SYSTEM_GLOBALIZATION_INVARIANT || "1",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+
+      const writeOutput = (chunk: Buffer) => {
+        debugStream.write(chunk);
+        process.stdout.write(chunk);
+      };
+      child.stdout.on("data", writeOutput);
+      child.stderr.on("data", writeOutput);
+
+      const containerExitCode = await new Promise<number>((resolve, reject) => {
+        child.on("error", reject);
+        child.on("close", (code) => resolve(code ?? 1));
+      });
+
+      await new Promise<void>((resolve) => debugStream.end(resolve));
+      const lastFailedStep = getLastFailedStep(timelinePath);
+      const jobSucceeded = isJobSuccessful({
+        lastFailedStep,
+        containerExitCode,
+        isBooting: false,
+      });
+
+      return buildJobResult({
+        containerName,
+        job,
+        startTime,
+        jobSucceeded,
+        lastFailedStep,
+        containerExitCode,
+        timelinePath,
+        logDir,
+        debugLogPath,
+        stepOutputs: {},
+      });
+    }
 
     // 6. Spawn container
     const dtuHost = await resolveDtuHost();
@@ -990,7 +1063,7 @@ export async function executeLocalJob(
       fsp.rm(dirs.shimsDir, rmOpts).catch(() => {}),
       !pauseOnFailure ? fsp.rm(dirs.signalsDir, rmOpts).catch(() => {}) : undefined,
       fsp.rm(dirs.diagDir, rmOpts).catch(() => {}),
-      fsp.rm(hostRunnerDir, rmOpts).catch(() => {}),
+      !hostExecutor ? fsp.rm(hostRunnerDir, rmOpts).catch(() => {}) : undefined,
     ]);
     await ephemeralDtu?.close().catch(() => {});
     process.removeListener("SIGINT", signalCleanup);
@@ -1004,4 +1077,22 @@ function parseCommaSeparatedEnv(name: string) {
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
+}
+
+function getLastFailedStep(timelinePath: string): string | null {
+  try {
+    if (!fs.existsSync(timelinePath)) {
+      return null;
+    }
+    const records = JSON.parse(fs.readFileSync(timelinePath, "utf-8")) as Array<{
+      name?: string;
+      type?: string;
+      result?: string;
+    }>;
+    return (
+      records.find((record) => record.type === "Task" && record.result === "failed")?.name ?? null
+    );
+  } catch {
+    return null;
+  }
 }
