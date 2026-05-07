@@ -394,10 +394,24 @@ export async function executeLocalJob(
         stdio: ["ignore", "pipe", "pipe"],
       });
 
+      let hostOutputBuffer = "";
+      const streamHostOutput = (chunk: Buffer) => {
+        hostOutputBuffer += chunk.toString("utf8");
+
+        let newlineIndex = hostOutputBuffer.indexOf("\n");
+        while (newlineIndex !== -1) {
+          const line = hostOutputBuffer.slice(0, newlineIndex + 1);
+          hostOutputBuffer = hostOutputBuffer.slice(newlineIndex + 1);
+          if (!/^\[(?:WORKER|RUNNER) \d{4}-\d{2}-\d{2}/.test(line)) {
+            process.stderr.write(line);
+          }
+          newlineIndex = hostOutputBuffer.indexOf("\n");
+        }
+      };
       const writeOutput = (chunk: Buffer) => {
         debugStream.write(chunk);
         if (process.env.AGENT_CI_HOST_STREAM_OUTPUT === "1") {
-          process.stderr.write(chunk);
+          streamHostOutput(chunk);
         }
       };
       child.stdout.on("data", writeOutput);
@@ -407,6 +421,9 @@ export async function executeLocalJob(
         child.on("error", reject);
         child.on("close", (code) => resolve(code ?? 1));
       });
+      if (process.env.AGENT_CI_HOST_STREAM_OUTPUT === "1" && hostOutputBuffer) {
+        process.stderr.write(hostOutputBuffer);
+      }
 
       await new Promise<void>((resolve) => debugStream.end(resolve));
       const lastFailedStep = getLastFailedStep(timelinePath);
