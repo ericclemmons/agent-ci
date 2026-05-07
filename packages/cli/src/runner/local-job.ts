@@ -396,6 +396,9 @@ export async function executeLocalJob(
 
       const writeOutput = (chunk: Buffer) => {
         debugStream.write(chunk);
+        if (process.env.AGENT_CI_HOST_STREAM_OUTPUT === "1") {
+          process.stderr.write(chunk);
+        }
       };
       child.stdout.on("data", writeOutput);
       child.stderr.on("data", writeOutput);
