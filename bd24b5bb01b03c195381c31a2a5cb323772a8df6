@@ -1,0 +1,21 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "bd24b5bb01b03c195381c31a2a5cb323772a8df6",
+  "prompts": {
+    "4a73c578211b5545": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_21a4594afffex598DG83ck5jRO",
+        "model": "openai/gpt-5.5"
+      },
+      "human_author": "Eric Clemmons",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 1,
+      "accepted_lines": 0,
+      "overriden_lines": 0
+    }
+  }
+}
