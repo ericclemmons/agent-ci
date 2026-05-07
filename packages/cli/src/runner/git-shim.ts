@@ -78,6 +78,12 @@ if [[ "$1" == "rev-parse" ]]; then
   # Fall through for other rev-parse calls (e.g. rev-parse --show-toplevel)
 fi
 
+# actions/checkout also validates the checked-out SHA with git log.
+if [[ "$*" == *"log -1 --format=%H"* ]]; then
+  echo "${fakeSha}"
+  exit 0
+fi
+
 # Pass through all other git commands (checkout, reset, log, init, config, etc.)
 echo "git $@ (pass-through)" >> /home/runner/_diag/agent-ci-git-calls.log
 /usr/bin/git.real "$@"
