@@ -594,6 +594,9 @@ export async function executeLocalJob(
     });
 
     const extraHosts = resolveDockerExtraHosts(dtuHost);
+    const extraContainerEnv = parseCommaSeparatedEnv("AGENT_CI_DOCKER_ENV");
+    const extraContainerBinds = parseCommaSeparatedEnv("AGENT_CI_DOCKER_BINDS");
+    const networkMode = process.env.AGENT_CI_DOCKER_NETWORK?.trim();
 
     const extraContainerOpts = parseContainerOptions(job.container?.options);
 
@@ -605,14 +608,18 @@ export async function executeLocalJob(
         "agent-ci.pid": String(process.pid),
         ...extraContainerOpts.labels,
       },
-      Env: [...containerEnv, ...extraContainerOpts.env],
+      Env: [...containerEnv, ...extraContainerOpts.env, ...extraContainerEnv],
       ...(useDirectContainer ? { Entrypoint: ["bash"] } : {}),
       Cmd: containerCmd,
       HostConfig: {
-        Binds: containerBinds,
+        Binds: [...containerBinds, ...extraContainerBinds],
         AutoRemove: false,
         Ulimits: [{ Name: "nofile", Soft: 65536, Hard: 65536 }],
-        ...(serviceCtx ? { NetworkMode: serviceCtx.networkName } : {}),
+        ...(networkMode
+          ? { NetworkMode: networkMode }
+          : serviceCtx
+            ? { NetworkMode: serviceCtx.networkName }
+            : {}),
         ...(extraHosts ? { ExtraHosts: extraHosts } : {}),
       },
       Tty: true,
@@ -990,4 +997,11 @@ export async function executeLocalJob(
     process.removeListener("SIGTERM", signalCleanup);
     process.removeListener("SIGHUP", signalCleanup);
   }
+}
+
+function parseCommaSeparatedEnv(name: string) {
+  return (process.env[name] ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
 }
