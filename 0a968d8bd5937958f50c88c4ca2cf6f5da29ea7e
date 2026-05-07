@@ -1,0 +1,23 @@
+packages/cli/src/runner/local-job.ts
+  4a73c578211b5545 5,140,145-161,266-268,362-377,379-429,1066,1081-1097
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "0a968d8bd5937958f50c88c4ca2cf6f5da29ea7e",
+  "prompts": {
+    "4a73c578211b5545": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_21a4594afffex598DG83ck5jRO",
+        "model": "openai/gpt-5.5"
+      },
+      "human_author": "Eric Clemmons",
+      "messages": [],
+      "total_additions": 109,
+      "total_deletions": 18,
+      "accepted_lines": 109,
+      "overriden_lines": 0
+    }
+  }
+}
