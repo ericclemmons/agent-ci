@@ -380,6 +380,7 @@ export async function executeLocalJob(
       const dockerApiUrl = resolveDockerApiUrl(dtuUrl, dtuHost);
       const githubRepo = job.githubRepo!;
       writeRunnerCredentials(hostRunnerDir, containerName, `${dockerApiUrl}/${githubRepo}`);
+      installHostGitShim(dirs.shimsDir);
 
       const timelinePath = path.join(logDir, "timeline.json");
       const child = spawn("./run.sh", ["--once"], {
@@ -1095,4 +1096,17 @@ function getLastFailedStep(timelinePath: string): string | null {
   } catch {
     return null;
   }
+}
+
+function installHostGitShim(shimsDir: string): void {
+  const realGitPath = "/usr/bin/git.real";
+  const gitPath = "/usr/bin/git";
+  const shimPath = path.join(shimsDir, "git");
+
+  if (!fs.existsSync(realGitPath)) {
+    fs.renameSync(gitPath, realGitPath);
+  }
+
+  fs.copyFileSync(shimPath, gitPath);
+  fs.chmodSync(gitPath, 0o755);
 }
