@@ -1,0 +1,23 @@
+packages/cli/src/runner/git-shim.ts
+  4a73c578211b5545 81-86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "3fe102c0f8995315e8a0548b5badcb2d29f9c66b",
+  "prompts": {
+    "4a73c578211b5545": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_21a4594afffex598DG83ck5jRO",
+        "model": "openai/gpt-5.5"
+      },
+      "human_author": "Eric Clemmons",
+      "messages": [],
+      "total_additions": 6,
+      "total_deletions": 0,
+      "accepted_lines": 6,
+      "overriden_lines": 0
+    }
+  }
+}
